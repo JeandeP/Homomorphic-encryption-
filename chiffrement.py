@@ -2,6 +2,22 @@ import json
 import gmpy2
 import phe as paillier
 import time
+import pickle
+from tensorflow import keras
+from sklearn import preprocessing
+
+def ia(text):
+
+	with open('tokenizer.json') as f:
+		data = json.load(f)
+		tokenizer = keras.preprocessing.text.tokenizer_from_json(data)
+
+	test_text = tokenizer.texts_to_sequences(text)
+	data = keras.preprocessing.sequence.pad_sequences(test_text, maxlen=100)
+	data.tolist()
+
+	return data
+
 
 '''
 Fonction permettant de créer et de sauvegarder en mémoire les clés publiques et privés dans le json custkeys
@@ -73,7 +89,7 @@ def dechiffrement(reponse) :
 Fonction permettant de charger les informations du fichier message servant à l'envoie du message vers le serveur
 '''
 def loadAnswer():
-	with open('message.json', "r") as file:
+	with open('answer.json', "r") as file:
 		data = json.load(file)
 	return data
 
@@ -91,6 +107,7 @@ def main():
 			message = input("Votre message : ")
 			data = conversion(message)
 			envoie = [int(data)]
+			print(envoie)
 			serializeData(pub_key, envoie)
 			print("Envoie du message ...   ...")
 
@@ -101,6 +118,7 @@ def main():
 			if (answer_key == pub_key):
 				answer = paillier.EncryptedNumber(answer_key, int(str(answer_file['values'][0][0])))  # Récupère les données réenvoyé par le serveur
 				reponse = priv_key.decrypt(answer)		# Déchiffrement des données avec l'utilisation de la clé privé
+				print(reponse)
 				fin = dechiffrement(reponse)			# Conversion des données par la fonction dechiffrement
 				print('message recu :', fin)
 			else :
@@ -111,4 +129,58 @@ def main():
 			print("Au revoir")
 
 
-main()
+def getkeys2():
+	with open('message.json', "r") as file:
+		keys = json.load(file)
+		value = {}
+		pub_key = paillier.PaillierPublicKey(n = int(keys['public_key']['n']))
+		'''for z in range(len(keys['values'])):
+			value[z] = paillier.EncryptedNumber(pub_key, int(keys['values'][z][0])))
+			print(value[z])'''
+		value = [[int(x[0], int(x[1])) for x in keys['values']]]
+		return pub_key, value
+
+def predict(data):
+	data = keras.preprocessing.sequence.pad_sequences(data, maxlen=1000)
+	model = keras.models.load_model('model.h5')
+	print(data)
+	predictions = model.predict(data)
+	out = predictions.argmax()
+	return out
+
+
+def sendData(data):
+    encrypted_data_list = [public_key.encrypt(x, precision = None) for x in data]
+    encrypted_data = {}
+    encrypted_data['public_key'] = {'n':public_key.n}
+    encrypted_data['values'] = [(str(x.ciphertext()), x.exponent) for x in encrypted_data_list]
+    with open('answer.json', "w") as file:
+        json.dump(encrypted_data, file)
+    return serializeData
+
+
+
+storeKeys()
+pub_key, priv_key = getkeys()
+message = ["Le vent et le soleil se regarde et pendant un court instant, rien ne se passe"]
+ecrit = ia(message)
+envoie = ecrit[0]
+print(envoie)
+serializeData(pub_key, envoie)
+
+public_key, data = getkeys2()
+print(data)
+out=predict(data)
+sendData(out)
+
+answer_file = loadAnswer()
+answer_key = paillier.PaillierPublicKey(n=int(answer_file['public_key']['n']))
+if (answer_key == pub_key):
+	for u in range(len(envoie)) :
+		answer = paillier.EncryptedNumber(answer_key, int(str(answer_file['values'][u][0])))  # Récupère les données réenvoyé par le serveur
+		reponse = priv_key.decrypt(answer)		# Déchiffrement des données avec l'utilisation de la clé privé
+		print(reponse)
+		#fin = dechiffrement(reponse)			# Conversion des données par la fonction dechiffrement
+		#print('message recu :', fin)
+else :
+	print("La cle public est inconnu")		# Affiche un message d'erreur si la clé publique reçu est différente de celle sauvegarder en mémoire
